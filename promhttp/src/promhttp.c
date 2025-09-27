@@ -52,31 +52,42 @@ enum MHD_Result promhttp_handler(void *cls, struct MHD_Connection *connection, c
     MHD_destroy_response(response);
     return ret;
   }
-  if (strcmp(url, "/") == 0) {
-    char *buf = "OK\n";
-    struct MHD_Response *response = MHD_create_response_from_buffer(strlen(buf), (void *)buf, MHD_RESPMEM_PERSISTENT);
-    enum MHD_Result ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
-    MHD_destroy_response(response);
-    return ret;
-  }
   if (strcmp(url, "/metrics") == 0) {
     // Bloqueo antes de leer métricas
     if (g_lock_cb) g_lock_cb(g_lock_user);
 
+    if (!PROM_ACTIVE_REGISTRY) {
+      if (g_unlock_cb) g_unlock_cb(g_lock_user);
+      const char *err = "Error: no active registry (PROM_ACTIVE_REGISTRY == NULL)\n";
+      struct MHD_Response *resp = MHD_create_response_from_buffer(strlen(err), (void *)err, MHD_RESPMEM_PERSISTENT);
+      enum MHD_Result ret = MHD_queue_response(connection, MHD_HTTP_SERVICE_UNAVAILABLE, resp);
+      MHD_destroy_response(resp);
+      return ret;
+    }
+
     const char *buf = prom_collector_registry_bridge(PROM_ACTIVE_REGISTRY);
 
-    // Desbloqueo después de leer métricas
     if (g_unlock_cb) g_unlock_cb(g_lock_user);
+
+    if (!buf) {
+      const char *err = "Error: prom_collector_registry_bridge returned NULL\n";
+      struct MHD_Response *resp = MHD_create_response_from_buffer(strlen(err), (void *)err, MHD_RESPMEM_PERSISTENT);
+      enum MHD_Result ret = MHD_queue_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, resp);
+      MHD_destroy_response(resp);
+      return ret;
+    }
 
     struct MHD_Response *response = MHD_create_response_from_buffer(strlen(buf), (void *)buf, MHD_RESPMEM_MUST_FREE);
     enum MHD_Result ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
     MHD_destroy_response(response);
     return ret;
   }
-  char *buf = "Bad Request\n";
-  struct MHD_Response *response = MHD_create_response_from_buffer(strlen(buf), (void *)buf, MHD_RESPMEM_PERSISTENT);
-  enum MHD_Result ret = MHD_queue_response(connection, MHD_HTTP_BAD_REQUEST, response);
-  MHD_destroy_response(response);
+
+  // Si llegamos aquí, la URL no es válida
+  const char *buf = "Bad Request\n";
+  struct MHD_Response *resp = MHD_create_response_from_buffer(strlen(buf), (void *)buf, MHD_RESPMEM_PERSISTENT);
+  enum MHD_Result ret = MHD_queue_response(connection, MHD_HTTP_BAD_REQUEST, resp);
+  MHD_destroy_response(resp);
   return ret;
 }
 
