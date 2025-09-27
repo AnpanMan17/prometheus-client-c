@@ -14,12 +14,25 @@
  * limitations under the License.
  */
 
+#include "promhttp.h"
+
 #include <string.h>
 
 #include "microhttpd.h"
 #include "prom.h"
 
 prom_collector_registry_t *PROM_ACTIVE_REGISTRY;
+
+// Callbacks de sincronización (opcionales, seteados por la aplicación)
+static promhttp_lock_fn g_lock_cb = NULL;
+static promhttp_lock_fn g_unlock_cb = NULL;
+static void *g_lock_user = NULL;
+
+void promhttp_set_lock_callbacks(promhttp_lock_fn lock_cb, promhttp_lock_fn unlock_cb, void *user) {
+  g_lock_cb = lock_cb;
+  g_unlock_cb = unlock_cb;
+  g_lock_user = user;
+}
 
 void promhttp_set_active_collector_registry(prom_collector_registry_t *active_registry) {
   if (!active_registry) {
@@ -47,7 +60,14 @@ enum MHD_Result promhttp_handler(void *cls, struct MHD_Connection *connection, c
     return ret;
   }
   if (strcmp(url, "/metrics") == 0) {
+    // Bloqueo antes de leer métricas
+    if (g_lock_cb) g_lock_cb(g_lock_user);
+
     const char *buf = prom_collector_registry_bridge(PROM_ACTIVE_REGISTRY);
+
+    // Desbloqueo después de leer métricas
+    if (g_unlock_cb) g_unlock_cb(g_lock_user);
+
     struct MHD_Response *response = MHD_create_response_from_buffer(strlen(buf), (void *)buf, MHD_RESPMEM_MUST_FREE);
     enum MHD_Result ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
     MHD_destroy_response(response);

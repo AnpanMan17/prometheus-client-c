@@ -46,3 +46,21 @@ void promhttp_set_active_collector_registry(prom_collector_registry_t *active_re
  */
 struct MHD_Daemon *promhttp_start_daemon(unsigned int flags, unsigned short port, MHD_AcceptPolicyCallback apc,
                                          void *apc_cls);
+
+/**
+ * @brief Tipo de callback para funciones de lock y unlock.
+ *
+ * La aplicación puede registrar funciones de bloqueo/desbloqueo (por ejemplo,
+ * wrappers sobre pthread_mutex_lock/unlock). Estas se invocarán automáticamente
+ * antes y después de acceder al registro de métricas en el handler HTTP.
+ */
+typedef void (*promhttp_lock_fn)(void *user);
+
+/**
+ * @brief Registra callbacks de lock/unlock opcionales para proteger el acceso concurrente al registry.
+ *
+ * @param lock_cb   Función a ejecutar antes de leer métricas (puede ser NULL).
+ * @param unlock_cb Función a ejecutar después de leer métricas (puede ser NULL).
+ * @param user      Puntero opaco que se pasará a lock_cb/unlock_cb.
+ */
+void promhttp_set_lock_callbacks(promhttp_lock_fn lock_cb, promhttp_lock_fn unlock_cb, void *user);
